@@ -440,10 +440,11 @@ function App() {
           newAi = Math.max(1, total - humanCount);
         }
       } else {
-        const totalMin = Math.max(2, humanCount + 1);
+        const aiMin = humanCount >= 2 ? 0 : 1;
+        const totalMin = humanCount + aiMin;
         const totalMax = 12;
         const total = totalMin + Math.floor(Math.random() * (totalMax - totalMin + 1));
-        newAi = Math.max(1, total - humanCount);
+        newAi = Math.max(aiMin, total - humanCount);
       }
       setAiCount(newAi);
     }
@@ -903,7 +904,7 @@ function App() {
                 <span className="sublbl">Lock the count, or let the dice decide.</span>
               </div>
               <div className="counter-ctrl">
-                <button className="counter-btn" disabled={aiCount <= 1} onClick={function() { setAiCount(function(n) { return Math.max(1, n - 1); }); }}>−</button>
+                <button className="counter-btn" disabled={aiCount <= 0 || (aiCount <= 1 && humanCount < 2)} onClick={function() { setAiCount(function(n) { return Math.max(humanCount >= 2 ? 0 : 1, n - 1); }); }}>−</button>
                 <div className="counter-num">{aiCount}</div>
                 <button className="counter-btn" disabled={humanCount + aiCount >= 12} onClick={function() { setAiCount(function(n) { return Math.min(12 - humanCount, n + 1); }); }}>+</button>
                 <button
