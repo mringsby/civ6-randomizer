@@ -43,7 +43,7 @@ window.LEADERS = [
   { id: "tomyris",      leader: "Tomyris",               civ: "Scythia",   dlc: null,    tag: "The Insatiable" },
   { id: "philip",       leader: "Philip II",             civ: "Spain",     dlc: null,    tag: "El Prudente" },
   { id: "gilgamesh",    leader: "Gilgamesh",             civ: "Sumeria",   dlc: null,    tag: "King of Uruk" },
-  { id: "harald",       leader: "Harald Hardrada",       civ: "Norway",    dlc: "viking",tag: "Last of the Vikings" },
+  { id: "harald",       leader: "Harald Hardrada",       civ: "Norway",    dlc: null,    tag: "Last of the Vikings" },
   { id: "jadwiga",      leader: "Jadwiga",               civ: "Poland",    dlc: "poland",tag: "Saint-King" },
   { id: "curtin",       leader: "John Curtin",           civ: "Australia", dlc: "aus",   tag: "Prime Minister" },
   { id: "cyrus",        leader: "Cyrus",                 civ: "Persia",    dlc: "perm",  tag: "King of Kings" },
@@ -73,6 +73,7 @@ window.LEADERS = [
   { id: "dido",         leader: "Dido",                  civ: "Phoenicia", dlc: "gs",    tag: "Queen of Carthage" },
   { id: "kristina",     leader: "Kristina",              civ: "Sweden",    dlc: "gs",    tag: "Minerva of the North" },
   { id: "eleanor",      leader: "Eleanor of Aquitaine",  civ: "England",   dlc: "gs",    tag: "Lady of the Court" },
+  { id: "eleanor_fr",   leader: "Eleanor of Aquitaine",  civ: "France",    dlc: "gs",    tag: "Lady of the Court" },
 
   // ── NEW FRONTIER PASS ──────────────────────────────────────
   { id: "ladysix",      leader: "Lady Six Sky",          civ: "Maya",      dlc: "maya",  tag: "Lady of Naranjo" },

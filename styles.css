@@ -221,7 +221,8 @@ body {
 .section-head h2.clickable { cursor: pointer; user-select: none; }
 .section-head h2.clickable:hover { color: var(--gold-hi); }
 .section.collapsed .panel,
-.section.collapsed .cols-2 { display: none; }
+.section.collapsed .cols-2,
+.section.collapsed .summary { display: none; }
 .section.collapsed {
   margin-bottom: 14px;
 }
@@ -690,3 +691,145 @@ body {
   text-transform: uppercase;
   margin-top: 6px;
 }
+
+/* ── Preset dropdown ───────────────────────────────────── */
+.preset-wrap { position: relative; }
+.preset-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 4px;
+  z-index: 100;
+  min-width: 190px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.preset-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--parchment);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: all 0.1s ease;
+}
+.preset-menu button:hover {
+  background: rgba(214,173,93,0.10);
+  color: var(--gold-hi);
+}
+
+/* ── Ban list ──────────────────────────────────────────── */
+.ban-panel {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px dashed var(--line-soft);
+}
+.ban-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.ban-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.ban-sub {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--parchment-dim);
+}
+.ban-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.ban-grid::-webkit-scrollbar { width: 6px; }
+.ban-grid::-webkit-scrollbar-track { background: transparent; }
+.ban-grid::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+.ban-chip {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  border: 1px solid var(--line-soft);
+  background: rgba(20,32,46,0.6);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+.ban-chip:hover { border-color: var(--line); background: var(--bg-tile); }
+.ban-chip.banned {
+  border-color: var(--accent-red);
+  background: rgba(200,84,58,0.12);
+}
+.ban-chip-name {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  color: var(--parchment);
+  line-height: 1.2;
+}
+.ban-chip.banned .ban-chip-name {
+  text-decoration: line-through;
+  color: var(--parchment-dim);
+}
+.ban-chip-civ {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--parchment-dim);
+  margin-top: 2px;
+}
+
+/* ── Active state for ghost buttons ────────────────────── */
+.btn-ghost.ban-active { color: var(--accent-red); border-color: rgba(200,84,58,0.4); }
+.btn-ghost.link-active { color: var(--gold-hi); border-color: var(--gold); background: rgba(214,173,93,0.08); }
+
+/* ── Roll history ──────────────────────────────────────── */
+.history-list { display: grid; gap: 8px; }
+.history-entry {
+  padding: 12px 14px;
+  background: rgba(20,32,46,0.6);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+}
+.history-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.history-num {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.history-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--parchment-dim);
+}
+.history-restore { margin-left: auto; }
+.history-summary {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--parchment);
+}
+.history-players { color: var(--parchment-dim); }

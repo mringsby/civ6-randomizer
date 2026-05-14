@@ -1,5 +1,16 @@
 /* global React, ReactDOM */
-const { useState, useMemo, useEffect, useCallback } = React;
+const { useState, useMemo, useEffect, useCallback, useRef } = React;
+
+// ─── localStorage helpers ─────────────────────────────────
+const storage = {
+  get(key, fallback) {
+    try { const v = localStorage.getItem("civ6r_" + key); return v ? JSON.parse(v) : fallback; }
+    catch (e) { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem("civ6r_" + key, JSON.stringify(value)); } catch (e) {}
+  }
+};
 
 // ─── Section header (collapsible) ──────────────────────────
 function SectionHead({ roman, title, collapsed, onToggle, locked, extra }) {
@@ -7,12 +18,12 @@ function SectionHead({ roman, title, collapsed, onToggle, locked, extra }) {
     <div className="section-head">
       <span className="roman">{roman}</span>
       <h2 className="clickable" onClick={onToggle}>{title}</h2>
-      {locked && collapsed && <span className="head-status">⬢ Locked — won't randomize</span>}
+      {locked && collapsed && <span className="head-status">&#x2B22; Locked — won't randomize</span>}
       <span className="ornament"></span>
       <div className="head-actions">
         {extra}
         <button className="chev" onClick={onToggle} title={collapsed ? "Expand" : "Collapse (also stops randomizing)"}>
-          {collapsed ? "▸" : "▾"}
+          {collapsed ? "\u25B8" : "\u25BE"}
         </button>
       </div>
     </div>
@@ -50,21 +61,34 @@ const CheckIcon = () => (
 
 // ─── helpers ───────────────────────────────────────────────
 const pick  = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const pickRange = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
 const toRoman = (n) => ["","I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII"][n] || String(n);
 
-// Compute leader pool from enabled DLCs
-function availableLeaders(dlcs) {
-  return window.LEADERS.filter(l => l.dlc === null || dlcs.has(l.dlc));
+// Map size → recommended ranges for player count and city-states
+const MAP_SIZE_RANGES = {
+  "Duel":     { players: [2, 2],   cs: [0, 3]   },
+  "Tiny":     { players: [3, 4],   cs: [3, 6]   },
+  "Small":    { players: [4, 6],   cs: [6, 9]   },
+  "Standard": { players: [6, 8],   cs: [9, 12]  },
+  "Large":    { players: [8, 10],  cs: [12, 15] },
+  "Huge":     { players: [10, 12], cs: [15, 18] },
+};
+
+// Compute leader pool from enabled DLCs minus banned leaders
+function availableLeaders(dlcs, banned) {
+  return window.LEADERS.filter(l =>
+    (l.dlc === null || dlcs.has(l.dlc)) && !banned.has(l.id)
+  );
 }
 
 // ─── lockable field control ────────────────────────────────
-function LockableField({ label, options, value, locked, onChange, onLockToggle, onReroll, animKey }) {
+function LockableField({ label, options, value, locked, onChange, onLockToggle, onReroll, rolling }) {
   return (
     <div className="field">
       <div className="field-label">{label}</div>
       <div className="field-value-shell">
         <select
-          className={"field-select " + (locked ? "locked" : "")}
+          className={"field-select " + (locked ? "locked " : "") + (rolling ? "flip-anim" : "")}
           value={value || ""}
           onChange={e => onChange(e.target.value)}
         >
@@ -73,12 +97,7 @@ function LockableField({ label, options, value, locked, onChange, onLockToggle, 
           ))}
         </select>
       </div>
-      <button
-        className="btn-reroll"
-        title="Reroll this"
-        disabled={locked}
-        onClick={onReroll}
-      >
+      <button className="btn-reroll" title="Reroll this" disabled={locked} onClick={onReroll}>
         <DieIcon />
       </button>
       <button
@@ -99,22 +118,22 @@ function DlcCard({ dlc, on, onToggle }) {
       <div className="dlc-check">{on && <CheckIcon/>}</div>
       <div className="dlc-text">
         <div className="dlc-name">{dlc.name}</div>
-        <div className="dlc-kind">{dlc.kind} · {dlc.short}</div>
+        <div className="dlc-kind">{dlc.kind} &middot; {dlc.short}</div>
       </div>
     </div>
   );
 }
 
 // ─── Player row ────────────────────────────────────────────
-function PlayerRow({ idx, kind, leaderId, locked, leaderPool, onChange, onLockToggle, onReroll, animKey }) {
+function PlayerRow({ idx, kind, leaderId, locked, leaderPool, onChange, onLockToggle, onReroll, rolling }) {
   const leader = leaderPool.find(l => l.id === leaderId) || null;
   return (
-    <div className={"player-row " + (kind === "Human" ? "human" : "")} key={animKey}>
+    <div className={"player-row " + (kind === "Human" ? "human" : "")}>
       <div className="player-portrait">{toRoman(idx)}</div>
       <div className="player-kind-tag">{kind === "Human" ? "HUM" : "AI"}</div>
       <div>
         {leader ? (
-          <div className="player-leader">
+          <div className={"player-leader" + (rolling ? " flip-anim" : "")}>
             {leader.leader}
             <span className="tag">{leader.tag}</span>
           </div>
@@ -130,16 +149,13 @@ function PlayerRow({ idx, kind, leaderId, locked, leaderPool, onChange, onLockTo
         >
           <option value="">— pick a leader —</option>
           {leaderPool.map(l => (
-            <option key={l.id} value={l.id}>{l.leader} · {l.civ}</option>
+            <option key={l.id} value={l.id}>{l.leader} &middot; {l.civ}</option>
           ))}
         </select>
       </div>
-      <button
-        className="btn-reroll"
-        title="Reroll this leader"
-        disabled={locked}
-        onClick={onReroll}
-      ><DieIcon/></button>
+      <button className="btn-reroll" title="Reroll this leader" disabled={locked} onClick={onReroll}>
+        <DieIcon/>
+      </button>
       <button
         className={"btn-icon " + (locked ? "locked" : "")}
         title={locked ? "Locked" : "Unlocked"}
@@ -153,30 +169,45 @@ function PlayerRow({ idx, kind, leaderId, locked, leaderPool, onChange, onLockTo
 
 // ─── App ───────────────────────────────────────────────────
 function App() {
-  // — DLCs (Set of ids; base is implicit) — start with main expansions on
-  const [dlcs, setDlcs] = useState(() => new Set([
-    "rf","gs","viking","poland","aus","perm","nub","khid",
-    "maya","eth","byzgaul","bab","viet","port","ldr"
-  ]));
+  // — DLCs — load from localStorage, default to all-on
+  const [dlcs, setDlcs] = useState(() => {
+    const saved = storage.get("dlcs", null);
+    return saved ? new Set(saved) : new Set(window.DLCS.map(d => d.id));
+  });
   const toggleDlc = (id) => setDlcs(prev => {
     const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  useEffect(() => { storage.set("dlcs", [...dlcs]); }, [dlcs]);
+
+  // — Banned leaders (Feature 11) —
+  const [bannedLeaders, setBannedLeaders] = useState(() => new Set(storage.get("banned", [])));
+  const [showBanList, setShowBanList] = useState(false);
+  useEffect(() => { storage.set("banned", [...bannedLeaders]); }, [bannedLeaders]);
+  const toggleBan = (id) => setBannedLeaders(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
 
-  // — Players: counts + per-slot leader assignment
-  const [humanCount, setHumanCount] = useState(1);
-  const [aiCount, setAiCount]       = useState(7);
+  // — Players —
+  const [humanCount, setHumanCount] = useState(() => storage.get("humanCount", 1));
+  const [aiCount, setAiCount]       = useState(() => storage.get("aiCount", 7));
   const [aiCountLocked, setAiCountLocked] = useState(false);
-  // slots: array of { kind, leaderId|null, locked }
+  useEffect(() => { storage.set("humanCount", humanCount); }, [humanCount]);
+  useEffect(() => { storage.set("aiCount", aiCount); }, [aiCount]);
+
   const [slots, setSlots] = useState(() => {
-    const init = [];
-    init.push({ kind: "Human", leaderId: null, locked: false });
-    for (let i = 0; i < 7; i++) init.push({ kind: "AI", leaderId: null, locked: false });
-    return init;
+    const h = storage.get("humanCount", 1);
+    const a = storage.get("aiCount", 7);
+    const arr = [];
+    for (let i = 0; i < h; i++) arr.push({ kind: "Human", leaderId: null, locked: false });
+    for (let i = 0; i < a; i++) arr.push({ kind: "AI", leaderId: null, locked: false });
+    return arr;
   });
 
-  // Reconcile slots whenever counts change (preserve existing assignments)
+  // Reconcile slots when counts change
   useEffect(() => {
     setSlots(prev => {
       const total = humanCount + aiCount;
@@ -184,17 +215,17 @@ function App() {
       for (let i = 0; i < total; i++) {
         const kind = i < humanCount ? "Human" : "AI";
         const existing = prev[i];
-        if (existing) {
-          next.push({ ...existing, kind });
-        } else {
-          next.push({ kind, leaderId: null, locked: false });
-        }
+        next.push(existing ? { ...existing, kind } : { kind, leaderId: null, locked: false });
       }
       return next;
     });
   }, [humanCount, aiCount]);
 
-  // — Settings (categorical, lockable) —
+  // — Link map size toggle (Feature 12) —
+  const [linkMapSize, setLinkMapSize] = useState(() => storage.get("linkMapSize", false));
+  useEffect(() => { storage.set("linkMapSize", linkMapSize); }, [linkMapSize]);
+
+  // — Settings —
   const initSettings = () => ({
     mapType:           { value: "Continents",   locked: false },
     mapSize:           { value: "Standard",     locked: false },
@@ -207,38 +238,57 @@ function App() {
     rainfall:          { value: "Standard",     locked: false },
     seaLevel:          { value: "Standard",     locked: false },
     disasterIntensity: { value: "2 — Standard", locked: false },
-    cityStates:        { value: "12",            locked: false }
+    cityStates:        { value: "12",           locked: false }
   });
   const [settings, setSettings] = useState(initSettings);
 
-  // — Game modes (each: { on, locked })
+  // — Game modes —
   const [modes, setModes] = useState(() => {
     const o = {};
-    window.GAME_MODES.forEach(m => o[m.id] = { on: false, locked: false });
+    window.GAME_MODES.forEach(m => { o[m.id] = { on: false, locked: false }; });
     return o;
   });
 
-  // — Victory types (each: { on, locked })
+  // — Victory types —
   const [victories, setVictories] = useState(() => {
     const o = {};
-    window.VICTORY_TYPES.forEach(v => o[v.id] = { on: true, locked: false });
+    window.VICTORY_TYPES.forEach(v => { o[v.id] = { on: true, locked: false }; });
     return o;
   });
 
-  // For animation key cycling on roll
+  // — Animation & nonce —
   const [rollNonce, setRollNonce] = useState(0);
+  const [rolling, setRolling] = useState(false);
 
-  // Collapsed sections — when collapsed, that section is excluded from "Roll Everything"
+  // — Collapsed sections —
   const [collapsed, setCollapsed] = useState({
     dlc: false, players: false, rules: false, modes: false, victory: false, summary: false
   });
   const toggleCollapsed = (key) =>
     setCollapsed(c => ({ ...c, [key]: !c[key] }));
 
-  // ── Available leader pool (driven by DLCs) ──
-  const leaderPool = useMemo(() => availableLeaders(dlcs), [dlcs]);
+  // — Roll history (Feature 14) —
+  const [rollHistory, setRollHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const skipHistory = useRef(false);
 
-  // If DLCs change, drop assignments that became unavailable (unless locked)
+  // — Preset menu (Feature 13) —
+  const [showPresets, setShowPresets] = useState(false);
+  useEffect(() => {
+    if (!showPresets) return;
+    const close = () => setShowPresets(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showPresets]);
+
+  // — Copy feedback —
+  const [copied, setCopied] = useState(false);
+
+  // ── Leader pools ──
+  const leaderPool = useMemo(() => availableLeaders(dlcs, bannedLeaders), [dlcs, bannedLeaders]);
+  const fullPool = useMemo(() => window.LEADERS.filter(l => l.dlc === null || dlcs.has(l.dlc)), [dlcs]);
+
+  // Drop unavailable leaders from non-locked slots
   useEffect(() => {
     setSlots(prev => prev.map(s => {
       if (s.locked) return s;
@@ -255,15 +305,13 @@ function App() {
 
   const rerollField = (key) => {
     const opts = window.OPTIONS[key];
-    if (!opts) return;
-    setField(key, { value: pick(opts) });
+    if (opts) setField(key, { value: pick(opts) });
   };
 
   // ─── Player handlers ─────────────────────────────────────
   const updateSlot = (i, patch) =>
     setSlots(prev => prev.map((s, idx) => idx === i ? { ...s, ...patch } : s));
 
-  // Reroll a single slot — pick a leader not used by other locked slots
   const rerollSlot = (i) => {
     setSlots(prev => {
       const used = new Set(prev.filter((s, idx) => idx !== i && s.leaderId).map(s => s.leaderId));
@@ -272,54 +320,74 @@ function App() {
           .map(s => leaderPool.find(l => l.id === s.leaderId)?.civ)
           .filter(Boolean)
       );
-      // prefer leaders whose civ isn't already in play
       let candidates = leaderPool.filter(l => !used.has(l.id) && !usedCivs.has(l.civ));
-      if (candidates.length === 0) candidates = leaderPool.filter(l => !used.has(l.id));
-      if (candidates.length === 0) candidates = leaderPool;
+      if (!candidates.length) candidates = leaderPool.filter(l => !used.has(l.id));
+      if (!candidates.length) candidates = leaderPool;
+      if (!candidates.length) return prev;
       return prev.map((s, idx) => idx === i ? { ...s, leaderId: pick(candidates).id } : s);
     });
   };
 
   // ─── Game mode handlers ──────────────────────────────────
   const modeAvailable = (m) => m.dlc ? dlcs.has(m.dlc) : true;
-
   const toggleMode = (id) => setModes(m => ({ ...m, [id]: { ...m[id], on: !m[id].on } }));
   const toggleModeLock = (id) => setModes(m => ({ ...m, [id]: { ...m[id], locked: !m[id].locked } }));
-
-  // Victories
   const toggleVictory = (id) => setVictories(v => ({ ...v, [id]: { ...v[id], on: !v[id].on } }));
   const toggleVictoryLock = (id) => setVictories(v => ({ ...v, [id]: { ...v[id], locked: !v[id].locked } }));
 
   // ─── ROLL EVERYTHING ────────────────────────────────────
-  // Order matters: AI count first → build the slot array for that new total →
-  // THEN assign leaders. Doing leaders before slot resize leaves new slots empty.
   const rollAll = useCallback(() => {
-    // ── 1. Match & World settings ──
+    setRolling(true);
+    setTimeout(() => setRolling(false), 400);
+
+    // 1. Roll settings synchronously so we can use the new map size
+    let newSettings = {};
+    Object.keys(settings).forEach(k => {
+      newSettings[k] = { ...settings[k] };
+    });
+
     if (!collapsed.rules) {
-      setSettings(prev => {
-        const next = { ...prev };
-        Object.keys(prev).forEach(k => {
-          if (!prev[k].locked) next[k] = { ...prev[k], value: pick(window.OPTIONS[k]) };
-        });
-        return next;
+      Object.keys(newSettings).forEach(k => {
+        if (!newSettings[k].locked) {
+          newSettings[k] = { ...newSettings[k], value: pick(window.OPTIONS[k]) };
+        }
       });
     }
 
-    // ── 2. Players: resolve AI count synchronously, then build slots & roll leaders ──
-    if (!collapsed.players) {
-      // Decide new AI count up front so leaders are rolled for the FINAL slot count
-      let newAiCount = aiCount;
-      if (!aiCountLocked) {
+    // 2. Player count — optionally linked to map size
+    let newAi = aiCount;
+    if (!collapsed.players && !aiCountLocked) {
+      if (linkMapSize && !collapsed.rules) {
+        const range = MAP_SIZE_RANGES[newSettings.mapSize.value];
+        if (range) {
+          const total = pickRange(range.players[0], range.players[1]);
+          newAi = Math.max(1, total - humanCount);
+        }
+      } else {
         const totalMin = Math.max(2, humanCount + 1);
         const totalMax = 12;
         const total = totalMin + Math.floor(Math.random() * (totalMax - totalMin + 1));
-        newAiCount = Math.max(1, total - humanCount);
-        setAiCount(newAiCount);
+        newAi = Math.max(1, total - humanCount);
       }
+      setAiCount(newAi);
+    }
 
+    // Link city-states to map size
+    if (linkMapSize && !collapsed.rules && !newSettings.cityStates.locked) {
+      const range = MAP_SIZE_RANGES[newSettings.mapSize.value];
+      if (range) {
+        newSettings.cityStates = { ...newSettings.cityStates, value: String(pickRange(range.cs[0], range.cs[1])) };
+      }
+    }
+
+    if (!collapsed.rules) {
+      setSettings(newSettings);
+    }
+
+    // 3. Leaders
+    if (!collapsed.players) {
       setSlots(prev => {
-        const total = humanCount + newAiCount;
-        // 1) Rebuild slots for the new size, preserving existing ones
+        const total = humanCount + newAi;
         const sized = [];
         for (let i = 0; i < total; i++) {
           const kind = i < humanCount ? "Human" : "AI";
@@ -327,7 +395,6 @@ function App() {
           sized.push(existing ? { ...existing, kind } : { kind, leaderId: null, locked: false });
         }
 
-        // 2) Collect locked leaders/civs that must stay
         const lockedLeaders = new Set(sized.filter(s => s.locked && s.leaderId).map(s => s.leaderId));
         const lockedCivs = new Set(
           sized.filter(s => s.locked && s.leaderId)
@@ -335,24 +402,23 @@ function App() {
             .filter(Boolean)
         );
 
-        // 3) Shuffle the leader pool, then walk slots and assign uniquely
         let pool = leaderPool.filter(l => !lockedLeaders.has(l.id) && !lockedCivs.has(l.civ));
         pool = [...pool].sort(() => Math.random() - 0.5);
 
-        const usedCivsRun = new Set(lockedCivs);
+        const usedCivs = new Set(lockedCivs);
         return sized.map(s => {
           if (s.locked) return s;
-          let idx = pool.findIndex(l => !usedCivsRun.has(l.civ));
+          let idx = pool.findIndex(l => !usedCivs.has(l.civ));
           if (idx === -1) idx = 0;
           const chosen = pool.splice(idx, 1)[0];
           if (!chosen) return { ...s, leaderId: null };
-          usedCivsRun.add(chosen.civ);
+          usedCivs.add(chosen.civ);
           return { ...s, leaderId: chosen.id };
         });
       });
     }
 
-    // ── 3. Game modes ──
+    // 4. Game modes
     if (!collapsed.modes) {
       setModes(prev => {
         const next = { ...prev };
@@ -365,7 +431,7 @@ function App() {
       });
     }
 
-    // ── 4. Victories — keep at least one on ──
+    // 5. Victories — keep at least one on
     if (!collapsed.victory) {
       setVictories(prev => {
         const next = { ...prev };
@@ -374,10 +440,9 @@ function App() {
           if (v.dlc && !dlcs.has(v.dlc)) { next[v.id] = { ...prev[v.id], on: false }; return; }
           next[v.id] = { ...prev[v.id], on: Math.random() < 0.8 };
         });
-        const anyOn = Object.values(next).some(x => x.on);
-        if (!anyOn) {
-          const candidates = window.VICTORY_TYPES.filter(v => !next[v.id].locked && (!v.dlc || dlcs.has(v.dlc)));
-          const c = pick(candidates) || window.VICTORY_TYPES[0];
+        if (!Object.values(next).some(x => x.on)) {
+          const cands = window.VICTORY_TYPES.filter(v => !next[v.id].locked && (!v.dlc || dlcs.has(v.dlc)));
+          const c = pick(cands) || window.VICTORY_TYPES[0];
           next[c.id] = { ...next[c.id], on: true };
         }
         return next;
@@ -385,62 +450,247 @@ function App() {
     }
 
     setRollNonce(n => n + 1);
-  }, [leaderPool, humanCount, aiCount, aiCountLocked, dlcs, collapsed]);
+  }, [leaderPool, humanCount, aiCount, aiCountLocked, dlcs, collapsed, settings, linkMapSize]);
+
+  // ── History capture after each roll ──
+  useEffect(() => {
+    if (rollNonce === 0) return;
+    if (skipHistory.current) { skipHistory.current = false; return; }
+    const sv = {};
+    Object.keys(settings).forEach(k => { sv[k] = settings[k].value; });
+    setRollHistory(prev => [{
+      ts: Date.now(),
+      settings: sv,
+      h: humanCount,
+      a: aiCount,
+      slots: slots.map(s => ({ kind: s.kind, leaderId: s.leaderId })),
+      modes: Object.fromEntries(Object.entries(modes).filter(function(e) { return e[1].on; }).map(function(e) { return [e[0], true]; })),
+      victories: Object.fromEntries(Object.entries(victories).filter(function(e) { return e[1].on; }).map(function(e) { return [e[0], true]; })),
+    }, ...prev].slice(0, 10));
+  }, [rollNonce]);
 
   // ─── Reset ──────────────────────────────────────────────
   const resetAll = () => {
+    skipHistory.current = true;
     setSettings(initSettings());
     setSlots(prev => prev.map(s => ({ ...s, leaderId: null, locked: false })));
     setModes(() => {
       const o = {};
-      window.GAME_MODES.forEach(m => o[m.id] = { on: false, locked: false });
+      window.GAME_MODES.forEach(m => { o[m.id] = { on: false, locked: false }; });
       return o;
     });
     setVictories(() => {
       const o = {};
-      window.VICTORY_TYPES.forEach(v => o[v.id] = { on: true, locked: false });
+      window.VICTORY_TYPES.forEach(v => { o[v.id] = { on: true, locked: false }; });
       return o;
     });
     setAiCountLocked(false);
     setRollNonce(n => n + 1);
   };
 
-  // ─── Summary text ───────────────────────────────────────
-  const summary = useMemo(() => {
-    const items = [
-      ["Map",          settings.mapType.value],
-      ["Size",         settings.mapSize.value],
-      ["Difficulty",   settings.difficulty.value],
-      ["Speed",        settings.gameSpeed.value],
-      ["Start Era",    settings.startEra.value],
-      ["Resources",    settings.resources.value],
-      ["World Age",    settings.worldAge.value],
-      ["Temperature",  settings.temperature.value],
-      ["Rainfall",     settings.rainfall.value],
-      ["Sea Level",    settings.seaLevel.value],
-      ["Disasters",    settings.disasterIntensity.value],
-      ["City-States",  settings.cityStates.value],
-      ["Players",      `${humanCount} Human · ${aiCount} AI`],
-    ];
-    return items;
-  }, [settings, humanCount, aiCount]);
+  // ─── Presets (Feature 13) ──────────────────────────────
+  const applyPreset = (preset) => {
+    setShowPresets(false);
+    resetAll();
+
+    switch (preset) {
+      case "deity-domination":
+        setSettings(prev => ({
+          ...prev,
+          difficulty: { value: "Deity", locked: true },
+          mapType: { value: "Pangaea", locked: true },
+        }));
+        setVictories(() => {
+          const o = {};
+          window.VICTORY_TYPES.forEach(v => { o[v.id] = { on: v.id === "domination", locked: true }; });
+          return o;
+        });
+        break;
+      case "peaceful-builder":
+        setSettings(prev => ({
+          ...prev,
+          difficulty: { value: "Settler", locked: true },
+          mapSize: { value: "Large", locked: true },
+          gameSpeed: { value: "Epic", locked: true },
+        }));
+        setVictories(() => {
+          const o = {};
+          window.VICTORY_TYPES.forEach(v => {
+            o[v.id] = {
+              on: v.id === "science" || v.id === "culture" || v.id === "score",
+              locked: v.id === "domination",
+            };
+          });
+          return o;
+        });
+        break;
+      case "chaos":
+        setModes(() => {
+          const o = {};
+          window.GAME_MODES.forEach(m => { o[m.id] = { on: modeAvailable(m), locked: modeAvailable(m) }; });
+          return o;
+        });
+        setCollapsed({ dlc: false, players: false, rules: false, modes: false, victory: false, summary: false });
+        break;
+      case "duel":
+        setHumanCount(1);
+        setAiCount(1);
+        setAiCountLocked(true);
+        setSettings(prev => ({ ...prev, mapSize: { value: "Duel", locked: true } }));
+        break;
+      case "full-random":
+        setCollapsed({ dlc: false, players: false, rules: false, modes: false, victory: false, summary: false });
+        setAiCountLocked(false);
+        break;
+    }
+  };
+
+  // ─── Copy summary to clipboard (Feature 10) ──────────
+  const copySummary = () => {
+    const lines = ["=== GAME RANDOMIZER \u2014 YOUR DECREE ===", ""];
+    summary.forEach(function(item) { lines.push(item[0] + ": " + item[1]); });
+    lines.push("");
+    slots.forEach(function(s, i) {
+      var l = leaderPool.find(function(x) { return x.id === s.leaderId; });
+      lines.push(s.kind + " " + toRoman(i + 1) + ": " + (l ? l.leader + " \u2014 " + l.civ : "Unassigned"));
+    });
+    lines.push("");
+    var am = window.GAME_MODES.filter(function(m) { return modes[m.id] && modes[m.id].on && modeAvailable(m); }).map(function(m) { return m.name; });
+    lines.push("Game Modes: " + (am.length ? am.join(", ") : "None"));
+    var av = window.VICTORY_TYPES.filter(function(v) { return victories[v.id] && victories[v.id].on; }).map(function(v) { return v.name; });
+    lines.push("Victories: " + av.join(", "));
+    navigator.clipboard.writeText(lines.join("\n")).then(function() {
+      setCopied(true);
+      setTimeout(function() { setCopied(false); }, 2000);
+    });
+  };
+
+  // ─── Share link (Feature 10) ──────────────────────────
+  const shareLink = () => {
+    const state = {
+      d: [...dlcs],
+      h: humanCount,
+      a: aiCount,
+      s: {},
+      sl: slots.map(function(s) { return s.leaderId || ""; }),
+      m: Object.entries(modes).filter(function(e) { return e[1].on; }).map(function(e) { return e[0]; }),
+      v: Object.entries(victories).filter(function(e) { return e[1].on; }).map(function(e) { return e[0]; }),
+    };
+    Object.keys(settings).forEach(function(k) { state.s[k] = settings[k].value; });
+    var url = window.location.origin + window.location.pathname + "#" + btoa(JSON.stringify(state));
+    navigator.clipboard.writeText(url).then(function() {
+      setCopied(true);
+      setTimeout(function() { setCopied(false); }, 2000);
+    });
+  };
+
+  // ── Load from URL hash on mount ──
+  useEffect(() => {
+    var hash = window.location.hash.slice(1);
+    if (!hash) return;
+    try {
+      var state = JSON.parse(atob(hash));
+      if (state.d) setDlcs(new Set(state.d));
+      if (state.h) setHumanCount(state.h);
+      if (state.a) setAiCount(state.a);
+      if (state.s) {
+        setSettings(function(prev) {
+          var next = {};
+          Object.keys(prev).forEach(function(k) {
+            next[k] = state.s[k] ? { value: state.s[k], locked: false } : prev[k];
+          });
+          return next;
+        });
+      }
+      if (state.sl) {
+        var total = (state.h || 1) + (state.a || 7);
+        setSlots(Array.from({ length: total }, function(_, i) {
+          return {
+            kind: i < (state.h || 1) ? "Human" : "AI",
+            leaderId: state.sl[i] || null,
+            locked: false,
+          };
+        }));
+      }
+      if (state.m) {
+        setModes(function(prev) {
+          var next = {};
+          Object.keys(prev).forEach(function(k) { next[k] = { on: state.m.indexOf(k) !== -1, locked: false }; });
+          return next;
+        });
+      }
+      if (state.v) {
+        setVictories(function(prev) {
+          var next = {};
+          Object.keys(prev).forEach(function(k) { next[k] = { on: state.v.indexOf(k) !== -1, locked: false }; });
+          return next;
+        });
+      }
+      history.replaceState(null, "", window.location.pathname);
+    } catch (e) {}
+  }, []);
+
+  // ─── Restore from history ──────────────────────────────
+  const restoreRoll = (snap) => {
+    setSettings(function(prev) {
+      var next = {};
+      Object.keys(prev).forEach(function(k) {
+        next[k] = snap.settings[k] ? { value: snap.settings[k], locked: false } : prev[k];
+      });
+      return next;
+    });
+    setHumanCount(snap.h);
+    setAiCount(snap.a);
+    setSlots(snap.slots.map(function(s) { return { kind: s.kind, leaderId: s.leaderId, locked: false }; }));
+    if (snap.modes) {
+      setModes(function(prev) {
+        var next = {};
+        Object.keys(prev).forEach(function(k) { next[k] = { on: !!snap.modes[k], locked: false }; });
+        return next;
+      });
+    }
+    if (snap.victories) {
+      setVictories(function(prev) {
+        var next = {};
+        Object.keys(prev).forEach(function(k) { next[k] = { on: !!snap.victories[k], locked: false }; });
+        return next;
+      });
+    }
+  };
+
+  // ─── Summary ────────────────────────────────────────────
+  const summary = useMemo(() => [
+    ["Map",         settings.mapType.value],
+    ["Size",        settings.mapSize.value],
+    ["Difficulty",  settings.difficulty.value],
+    ["Speed",       settings.gameSpeed.value],
+    ["Start Era",   settings.startEra.value],
+    ["Resources",   settings.resources.value],
+    ["World Age",   settings.worldAge.value],
+    ["Temperature", settings.temperature.value],
+    ["Rainfall",    settings.rainfall.value],
+    ["Sea Level",   settings.seaLevel.value],
+    ["Disasters",   settings.disasterIntensity.value],
+    ["City-States", settings.cityStates.value],
+    ["Players",     humanCount + " Human \u00B7 " + aiCount + " AI"],
+  ], [settings, humanCount, aiCount]);
 
   // ─── Render ─────────────────────────────────────────────
   const settingsKeys = [
-    ["Map Type",        "mapType"],
-    ["Map Size",        "mapSize"],
-    ["Difficulty",      "difficulty"],
-    ["Game Speed",      "gameSpeed"],
-    ["Start Era",       "startEra"],
-    ["Resources",       "resources"],
-    ["City-States",     "cityStates"],
+    ["Map Type",    "mapType"],
+    ["Map Size",    "mapSize"],
+    ["Difficulty",  "difficulty"],
+    ["Game Speed",  "gameSpeed"],
+    ["Start Era",   "startEra"],
+    ["Resources",   "resources"],
+    ["City-States", "cityStates"],
   ];
   const worldKeys = [
-    ["World Age",       "worldAge"],
-    ["Temperature",     "temperature"],
-    ["Rainfall",        "rainfall"],
-    ["Sea Level",       "seaLevel"],
-    ["Disasters",       "disasterIntensity"],
+    ["World Age",    "worldAge"],
+    ["Temperature",  "temperature"],
+    ["Rainfall",     "rainfall"],
+    ["Sea Level",    "seaLevel"],
+    ["Disasters",    "disasterIntensity"],
   ];
 
   return (
@@ -450,48 +700,96 @@ function App() {
         <div className="title-block">
           <div className="eyebrow">— The Tome of Many Worlds —</div>
           <h1>Game Randomizer</h1>
-          <div className="sub">An unofficial setup oracle for 4X civilization-builder games · lock what you love, roll the rest.</div>
+          <div className="sub">An unofficial setup oracle for 4X civilization-builder games &middot; lock what you love, roll the rest.</div>
         </div>
         <div className="masthead-actions">
+          <div className="preset-wrap">
+            <button className="btn" onClick={function(e) { e.stopPropagation(); setShowPresets(function(v) { return !v; }); }}>Presets &#x25BE;</button>
+            {showPresets && (
+              <div className="preset-menu" onClick={function(e) { e.stopPropagation(); }}>
+                <button onClick={function() { applyPreset("full-random"); }}>Full Random</button>
+                <button onClick={function() { applyPreset("deity-domination"); }}>Deity Domination</button>
+                <button onClick={function() { applyPreset("peaceful-builder"); }}>Peaceful Builder</button>
+                <button onClick={function() { applyPreset("chaos"); }}>Chaos Mode</button>
+                <button onClick={function() { applyPreset("duel"); }}>1v1 Duel</button>
+              </div>
+            )}
+          </div>
           <button className="btn" onClick={resetAll}>Reset</button>
-          <button className="btn btn-primary" onClick={rollAll}>⚄ Roll Everything</button>
+          <button className="btn btn-primary" onClick={rollAll}>&#x2684; Roll Everything</button>
         </div>
       </div>
 
-      {/* ─── DLC ─── */}
+      {/* ─── I · DLC ─── */}
       <div className={"section " + (collapsed.dlc ? "collapsed" : "")}>
         <SectionHead
           roman="I"
           title="Content Owned"
           collapsed={collapsed.dlc}
-          onToggle={() => toggleCollapsed("dlc")}
+          onToggle={function() { toggleCollapsed("dlc"); }}
           extra={
-            <>
-              <button className="btn btn-ghost" onClick={(e) => { e.stopPropagation(); setDlcs(new Set(window.DLCS.map(d => d.id))); }}>Select All</button>
-              <button className="btn btn-ghost" onClick={(e) => { e.stopPropagation(); setDlcs(new Set()); }}>Deselect All</button>
-            </>
+            <React.Fragment>
+              <button className="btn btn-ghost" onClick={function(e) { e.stopPropagation(); setDlcs(new Set(window.DLCS.map(function(d) { return d.id; }))); }}>Select All</button>
+              <button className="btn btn-ghost" onClick={function(e) { e.stopPropagation(); setDlcs(new Set()); }}>Deselect All</button>
+            </React.Fragment>
           }
         />
         <div className="panel">
           <div className="dlc-grid">
-            {window.DLCS.map(d => (
-              <DlcCard key={d.id} dlc={d} on={dlcs.has(d.id)} onToggle={() => toggleDlc(d.id)} />
-            ))}
+            {window.DLCS.map(function(d) {
+              return <DlcCard key={d.id} dlc={d} on={dlcs.has(d.id)} onToggle={function() { toggleDlc(d.id); }} />;
+            })}
           </div>
           <div className="note">Toggling off a pack removes its civilizations, leaders, and game modes from the random pool.</div>
         </div>
       </div>
 
-      {/* ─── Players ─── */}
+      {/* ─── II · Players & Leaders ─── */}
       <div className={"section " + (collapsed.players ? "collapsed locked" : "")}>
         <SectionHead
           roman="II"
-          title="Players & Leaders"
+          title="Players &amp; Leaders"
           collapsed={collapsed.players}
-          onToggle={() => toggleCollapsed("players")}
+          onToggle={function() { toggleCollapsed("players"); }}
           locked={true}
+          extra={
+            <button
+              className={"btn btn-ghost" + (bannedLeaders.size > 0 ? " ban-active" : "")}
+              onClick={function(e) { e.stopPropagation(); setShowBanList(function(v) { return !v; }); }}
+            >
+              {bannedLeaders.size > 0 ? "Bans (" + bannedLeaders.size + ")" : "Ban List"}
+            </button>
+          }
         />
         <div className="panel">
+          {/* Ban list */}
+          {showBanList && (
+            <div className="ban-panel">
+              <div className="ban-header">
+                <span className="ban-title">Banned Leaders</span>
+                <span className="ban-sub">Banned leaders are excluded from the random pool</span>
+                {bannedLeaders.size > 0 && (
+                  <button className="btn btn-ghost" onClick={function() { setBannedLeaders(new Set()); }} style={{marginLeft: "auto", padding: "4px 8px"}}>Clear All</button>
+                )}
+              </div>
+              <div className="ban-grid">
+                {fullPool.map(function(l) {
+                  return (
+                    <div
+                      key={l.id}
+                      className={"ban-chip " + (bannedLeaders.has(l.id) ? "banned" : "")}
+                      onClick={function() { toggleBan(l.id); }}
+                      title={l.leader + " \u00B7 " + l.civ}
+                    >
+                      <span className="ban-chip-name">{l.leader}</span>
+                      <span className="ban-chip-civ">{l.civ}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="players-head">
             <div className="counter">
               <div className="counter-label">
@@ -499,9 +797,9 @@ function App() {
                 <span className="sublbl">Always your choice — never randomized.</span>
               </div>
               <div className="counter-ctrl">
-                <button className="counter-btn" disabled={humanCount <= 1} onClick={() => setHumanCount(n => Math.max(1, n - 1))}>−</button>
+                <button className="counter-btn" disabled={humanCount <= 1} onClick={function() { setHumanCount(function(n) { return Math.max(1, n - 1); }); }}>−</button>
                 <div className="counter-num">{humanCount}</div>
-                <button className="counter-btn" disabled={humanCount + aiCount >= 12} onClick={() => setHumanCount(n => Math.min(12 - aiCount, n + 1))}>+</button>
+                <button className="counter-btn" disabled={humanCount + aiCount >= 12} onClick={function() { setHumanCount(function(n) { return Math.min(12 - aiCount, n + 1); }); }}>+</button>
               </div>
             </div>
             <div className="counter">
@@ -510,13 +808,13 @@ function App() {
                 <span className="sublbl">Lock the count, or let the dice decide.</span>
               </div>
               <div className="counter-ctrl">
-                <button className="counter-btn" disabled={aiCount <= 1} onClick={() => setAiCount(n => Math.max(1, n - 1))}>−</button>
+                <button className="counter-btn" disabled={aiCount <= 1} onClick={function() { setAiCount(function(n) { return Math.max(1, n - 1); }); }}>−</button>
                 <div className="counter-num">{aiCount}</div>
-                <button className="counter-btn" disabled={humanCount + aiCount >= 12} onClick={() => setAiCount(n => Math.min(12 - humanCount, n + 1))}>+</button>
+                <button className="counter-btn" disabled={humanCount + aiCount >= 12} onClick={function() { setAiCount(function(n) { return Math.min(12 - humanCount, n + 1); }); }}>+</button>
                 <button
                   className={"btn-icon " + (aiCountLocked ? "locked" : "")}
                   title={aiCountLocked ? "AI count is locked" : "AI count will randomize"}
-                  onClick={() => setAiCountLocked(v => !v)}
+                  onClick={function() { setAiCountLocked(function(v) { return !v; }); }}
                   style={{marginLeft: 6}}
                 >
                   {aiCountLocked ? <LockClosedIcon/> : <LockOpenIcon/>}
@@ -526,81 +824,100 @@ function App() {
           </div>
 
           <div className="player-list">
-            {slots.map((s, i) => (
-              <PlayerRow
-                key={i}
-                idx={i + 1}
-                kind={s.kind}
-                leaderId={s.leaderId}
-                locked={s.locked}
-                leaderPool={leaderPool}
-                onChange={v => updateSlot(i, { leaderId: v || null })}
-                onLockToggle={() => updateSlot(i, { locked: !s.locked })}
-                onReroll={() => rerollSlot(i)}
-                animKey={`${i}-${rollNonce}-${s.leaderId}`}
-              />
-            ))}
+            {slots.map(function(s, i) {
+              return (
+                <PlayerRow
+                  key={i}
+                  idx={i + 1}
+                  kind={s.kind}
+                  leaderId={s.leaderId}
+                  locked={s.locked}
+                  leaderPool={leaderPool}
+                  onChange={function(v) { updateSlot(i, { leaderId: v || null }); }}
+                  onLockToggle={function() { updateSlot(i, { locked: !s.locked }); }}
+                  onReroll={function() { rerollSlot(i); }}
+                  rolling={rolling && !s.locked}
+                />
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* ─── Rules & World ─── */}
+      {/* ─── III · Rules of the World ─── */}
       <div className={"section " + (collapsed.rules ? "collapsed locked" : "")}>
         <SectionHead
           roman="III"
           title="Rules of the World"
           collapsed={collapsed.rules}
-          onToggle={() => toggleCollapsed("rules")}
+          onToggle={function() { toggleCollapsed("rules"); }}
           locked={true}
+          extra={
+            <button
+              className={"btn btn-ghost" + (linkMapSize ? " link-active" : "")}
+              onClick={function(e) { e.stopPropagation(); setLinkMapSize(function(v) { return !v; }); }}
+              title="When enabled, player count and city-states scale to map size during rolls"
+            >
+              {linkMapSize ? "\u26D3 Map Link On" : "Map Link Off"}
+            </button>
+          }
         />
         <div className="cols-2">
           <div className="panel">
             <div style={{fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: ".2em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 10}}>Match Settings</div>
-            {settingsKeys.map(([label, key]) => (
-              <LockableField
-                key={key}
-                label={label}
-                options={window.OPTIONS[key]}
-                value={settings[key].value}
-                locked={settings[key].locked}
-                onChange={v => setField(key, { value: v })}
-                onLockToggle={() => setField(key, { locked: !settings[key].locked })}
-                onReroll={() => rerollField(key)}
-              />
-            ))}
+            {settingsKeys.map(function(pair) {
+              var label = pair[0], key = pair[1];
+              return (
+                <LockableField
+                  key={key}
+                  label={label}
+                  options={window.OPTIONS[key]}
+                  value={settings[key].value}
+                  locked={settings[key].locked}
+                  onChange={function(v) { setField(key, { value: v }); }}
+                  onLockToggle={function() { setField(key, { locked: !settings[key].locked }); }}
+                  onReroll={function() { rerollField(key); }}
+                  rolling={rolling && !settings[key].locked}
+                />
+              );
+            })}
           </div>
           <div className="panel">
             <div style={{fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: ".2em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 10}}>World Climate</div>
-            {worldKeys.map(([label, key]) => (
-              <LockableField
-                key={key}
-                label={label}
-                options={window.OPTIONS[key]}
-                value={settings[key].value}
-                locked={settings[key].locked}
-                onChange={v => setField(key, { value: v })}
-                onLockToggle={() => setField(key, { locked: !settings[key].locked })}
-                onReroll={() => rerollField(key)}
-              />
-            ))}
+            {worldKeys.map(function(pair) {
+              var label = pair[0], key = pair[1];
+              return (
+                <LockableField
+                  key={key}
+                  label={label}
+                  options={window.OPTIONS[key]}
+                  value={settings[key].value}
+                  locked={settings[key].locked}
+                  onChange={function(v) { setField(key, { value: v }); }}
+                  onLockToggle={function() { setField(key, { locked: !settings[key].locked }); }}
+                  onReroll={function() { rerollField(key); }}
+                  rolling={rolling && !settings[key].locked}
+                />
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* ─── Game Modes ─── */}
+      {/* ─── IV · Game Modes ─── */}
       <div className={"section " + (collapsed.modes ? "collapsed locked" : "")}>
         <SectionHead
           roman="IV"
           title="Game Modes"
           collapsed={collapsed.modes}
-          onToggle={() => toggleCollapsed("modes")}
+          onToggle={function() { toggleCollapsed("modes"); }}
           locked={true}
         />
         <div className="panel">
           <div className="modes-grid">
-            {window.GAME_MODES.map(m => {
-              const available = modeAvailable(m);
-              const dlc = window.DLCS.find(d => d.id === m.dlc);
+            {window.GAME_MODES.map(function(m) {
+              var available = modeAvailable(m);
+              var dlc = window.DLCS.find(function(d) { return d.id === m.dlc; });
               return (
                 <div
                   key={m.id}
@@ -608,17 +925,17 @@ function App() {
                 >
                   <div>
                     <div className="mode-name">{m.name}</div>
-                    <span className="req">{available ? `Requires ${dlc?.short || "base"}` : `Locked — enable ${dlc?.name}`}</span>
+                    <span className="req">{available ? "Requires " + (dlc ? dlc.short : "base") : "Locked — enable " + (dlc ? dlc.name : "")}</span>
                   </div>
                   <button
                     className="mode-toggle"
                     disabled={!available}
-                    onClick={() => available && toggleMode(m.id)}
+                    onClick={function() { if (available) toggleMode(m.id); }}
                     title="Toggle mode"
                   />
                   <button
                     className={"btn-icon " + (modes[m.id].locked ? "locked" : "")}
-                    onClick={() => toggleModeLock(m.id)}
+                    onClick={function() { toggleModeLock(m.id); }}
                     title={modes[m.id].locked ? "Locked" : "Unlocked"}
                   >
                     {modes[m.id].locked ? <LockClosedIcon/> : <LockOpenIcon/>}
@@ -630,20 +947,20 @@ function App() {
         </div>
       </div>
 
-      {/* ─── Victory ─── */}
+      {/* ─── V · Paths to Victory ─── */}
       <div className={"section " + (collapsed.victory ? "collapsed locked" : "")}>
         <SectionHead
           roman="V"
           title="Paths to Victory"
           collapsed={collapsed.victory}
-          onToggle={() => toggleCollapsed("victory")}
+          onToggle={function() { toggleCollapsed("victory"); }}
           locked={true}
         />
         <div className="panel">
           <div className="modes-grid">
-            {window.VICTORY_TYPES.map(v => {
-              const available = !v.dlc || dlcs.has(v.dlc);
-              const dlc = v.dlc && window.DLCS.find(d => d.id === v.dlc);
+            {window.VICTORY_TYPES.map(function(v) {
+              var available = !v.dlc || dlcs.has(v.dlc);
+              var dlc = v.dlc && window.DLCS.find(function(d) { return d.id === v.dlc; });
               return (
                 <div
                   key={v.id}
@@ -651,16 +968,16 @@ function App() {
                 >
                   <div>
                     <div className="mode-name">{v.name} Victory</div>
-                    <span className="req">{available ? (dlc ? `Requires ${dlc.short}` : "Base game") : `Requires ${dlc?.name}`}</span>
+                    <span className="req">{available ? (dlc ? "Requires " + dlc.short : "Base game") : "Requires " + (dlc ? dlc.name : "")}</span>
                   </div>
                   <button
                     className="mode-toggle"
                     disabled={!available}
-                    onClick={() => available && toggleVictory(v.id)}
+                    onClick={function() { if (available) toggleVictory(v.id); }}
                   />
                   <button
                     className={"btn-icon " + (victories[v.id].locked ? "locked" : "")}
-                    onClick={() => toggleVictoryLock(v.id)}
+                    onClick={function() { toggleVictoryLock(v.id); }}
                   >
                     {victories[v.id].locked ? <LockClosedIcon/> : <LockOpenIcon/>}
                   </button>
@@ -671,57 +988,108 @@ function App() {
         </div>
       </div>
 
-      {/* ─── Summary ─── */}
+      {/* ─── VI · Your Decree ─── */}
       <div className={"section " + (collapsed.summary ? "collapsed" : "")}>
         <SectionHead
           roman="VI"
           title="Your Decree"
           collapsed={collapsed.summary}
-          onToggle={() => toggleCollapsed("summary")}
+          onToggle={function() { toggleCollapsed("summary"); }}
+          extra={
+            <React.Fragment>
+              <button className="btn btn-ghost" onClick={copySummary} title="Copy summary to clipboard">
+                {copied ? "\u2713 Copied!" : "Copy"}
+              </button>
+              <button className="btn btn-ghost" onClick={shareLink} title="Copy share link to clipboard">
+                Share Link
+              </button>
+            </React.Fragment>
+          }
         />
-        <div className="summary" key={`sum-${rollNonce}`}>
-          <h3>✦  By the dice, thus it shall be  ✦</h3>
+        <div className="summary" key={"sum-" + rollNonce}>
+          <h3>&#x2726;  By the dice, thus it shall be  &#x2726;</h3>
           <div className="summary-grid">
-            {summary.map(([k, v]) => (
-              <div className="summary-item" key={k}>
-                <div className="k">{k}</div>
-                <div className="v">{v}</div>
-              </div>
-            ))}
-          </div>
-          <div className="compass"><span className="line"></span><span className="star">⚜</span><span className="line"></span></div>
-          <div className="summary-grid">
-            {slots.map((s, i) => {
-              const l = leaderPool.find(x => x.id === s.leaderId);
+            {summary.map(function(item) {
               return (
-                <div className="summary-item" key={i}>
-                  <div className="k">{s.kind} · Player {toRoman(i + 1)}</div>
-                  <div className="v">{l ? `${l.leader} — ${l.civ}` : "—"}</div>
+                <div className="summary-item flip-anim" key={item[0]}>
+                  <div className="k">{item[0]}</div>
+                  <div className="v">{item[1]}</div>
                 </div>
               );
             })}
           </div>
-          <div className="compass"><span className="line"></span><span className="star">⚜</span><span className="line"></span></div>
+          <div className="compass"><span className="line"></span><span className="star">&#x269C;</span><span className="line"></span></div>
           <div className="summary-grid">
-            <div className="summary-item">
+            {slots.map(function(s, i) {
+              var l = leaderPool.find(function(x) { return x.id === s.leaderId; });
+              return (
+                <div className="summary-item flip-anim" key={i}>
+                  <div className="k">{s.kind} &middot; Player {toRoman(i + 1)}</div>
+                  <div className="v">{l ? l.leader + " — " + l.civ : "—"}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="compass"><span className="line"></span><span className="star">&#x269C;</span><span className="line"></span></div>
+          <div className="summary-grid">
+            <div className="summary-item flip-anim">
               <div className="k">Game Modes</div>
               <div className="v">
-                {Object.entries(modes).filter(([id, m]) => m.on && modeAvailable(window.GAME_MODES.find(g => g.id === id))).map(([id]) => window.GAME_MODES.find(g => g.id === id).name).join(" · ") || <em style={{color: "var(--parchment-dim)"}}>None</em>}
+                {(function() {
+                  var active = Object.entries(modes).filter(function(e) { return e[1].on && modeAvailable(window.GAME_MODES.find(function(g) { return g.id === e[0]; })); }).map(function(e) { return window.GAME_MODES.find(function(g) { return g.id === e[0]; }).name; });
+                  return active.length ? active.join(" \u00B7 ") : <em style={{color: "var(--parchment-dim)"}}>None</em>;
+                })()}
               </div>
             </div>
-            <div className="summary-item">
+            <div className="summary-item flip-anim">
               <div className="k">Victories Enabled</div>
               <div className="v">
-                {Object.entries(victories).filter(([id, v]) => v.on).map(([id]) => window.VICTORY_TYPES.find(g => g.id === id).name).join(" · ") || <em style={{color: "var(--parchment-dim)"}}>None</em>}
+                {(function() {
+                  var active = Object.entries(victories).filter(function(e) { return e[1].on; }).map(function(e) { return window.VICTORY_TYPES.find(function(g) { return g.id === e[0]; }).name; });
+                  return active.length ? active.join(" \u00B7 ") : <em style={{color: "var(--parchment-dim)"}}>None</em>;
+                })()}
               </div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* ─── VII · Roll History ─── */}
+      {rollHistory.length > 0 && (
+        <div className={"section " + (!showHistory ? "collapsed" : "")}>
+          <SectionHead
+            roman="VII"
+            title={"Roll History (" + rollHistory.length + ")"}
+            collapsed={!showHistory}
+            onToggle={function() { setShowHistory(function(v) { return !v; }); }}
+          />
+          <div className="panel">
+            <div className="history-list">
+              {rollHistory.map(function(snap, idx) {
+                var time = new Date(snap.ts);
+                var timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                return (
+                  <div className="history-entry" key={snap.ts}>
+                    <div className="history-header">
+                      <span className="history-num">Roll #{rollHistory.length - idx}</span>
+                      <span className="history-time">{timeStr}</span>
+                      <button className="btn btn-ghost history-restore" onClick={function() { restoreRoll(snap); }}>Restore</button>
+                    </div>
+                    <div className="history-summary">
+                      {snap.settings.mapType} &middot; {snap.settings.mapSize} &middot; {snap.settings.difficulty} &middot; {snap.settings.gameSpeed}
+                      <span className="history-players"> — {snap.h}H / {snap.a}AI</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="foot">
         Made for tabletop-style chaos. Lock what matters, leave the rest to fate.
-        <div className="credit">— An unofficial fan tool · not affiliated with any publisher —</div>
+        <div className="credit">— An unofficial fan tool &middot; not affiliated with any publisher —</div>
       </div>
     </div>
   );
