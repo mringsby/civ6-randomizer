@@ -59,6 +59,21 @@ const CheckIcon = () => (
   </svg>
 );
 
+// ─── clipboard helper (fallback for file:// and older browsers) ──
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  var ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.cssText = "position:fixed;left:-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+  return Promise.resolve();
+}
+
 // ─── helpers ───────────────────────────────────────────────
 const pick  = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const pickRange = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -281,8 +296,13 @@ function App() {
     return () => document.removeEventListener("click", close);
   }, [showPresets]);
 
-  // — Copy feedback —
-  const [copied, setCopied] = useState(false);
+  // — Toast notification —
+  const [toast, setToast] = useState(null);
+  useEffect(() => {
+    if (!toast) return;
+    var t = setTimeout(function() { setToast(null); }, 2500);
+    return function() { clearTimeout(t); };
+  }, [toast]);
 
   // ── Leader pools ──
   const leaderPool = useMemo(() => availableLeaders(dlcs, bannedLeaders), [dlcs, bannedLeaders]);
@@ -559,9 +579,8 @@ function App() {
     lines.push("Game Modes: " + (am.length ? am.join(", ") : "None"));
     var av = window.VICTORY_TYPES.filter(function(v) { return victories[v.id] && victories[v.id].on; }).map(function(v) { return v.name; });
     lines.push("Victories: " + av.join(", "));
-    navigator.clipboard.writeText(lines.join("\n")).then(function() {
-      setCopied(true);
-      setTimeout(function() { setCopied(false); }, 2000);
+    copyText(lines.join("\n")).then(function() {
+      setToast("Summary copied to clipboard");
     });
   };
 
@@ -578,9 +597,8 @@ function App() {
     };
     Object.keys(settings).forEach(function(k) { state.s[k] = settings[k].value; });
     var url = window.location.origin + window.location.pathname + "#" + btoa(JSON.stringify(state));
-    navigator.clipboard.writeText(url).then(function() {
-      setCopied(true);
-      setTimeout(function() { setCopied(false); }, 2000);
+    copyText(url).then(function() {
+      setToast("Share link copied to clipboard");
     });
   };
 
@@ -998,7 +1016,7 @@ function App() {
           extra={
             <React.Fragment>
               <button className="btn btn-ghost" onClick={copySummary} title="Copy summary to clipboard">
-                {copied ? "\u2713 Copied!" : "Copy"}
+                Copy
               </button>
               <button className="btn btn-ghost" onClick={shareLink} title="Copy share link to clipboard">
                 Share Link
@@ -1091,6 +1109,8 @@ function App() {
         Made for tabletop-style chaos. Lock what matters, leave the rest to fate.
         <div className="credit">— An unofficial fan tool &middot; not affiliated with any publisher —</div>
       </div>
+
+      {toast && <div className="toast" key={toast}>{toast}</div>}
     </div>
   );
 }
