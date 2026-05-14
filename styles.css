@@ -692,6 +692,59 @@ body {
   margin-top: 6px;
 }
 
+/* ── Per-player DLC picker ─────────────────────────────── */
+.player-dlc-row {
+  margin: -4px 0 4px;
+  padding: 4px 14px 4px 84px;
+}
+.player-dlc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--parchment-dim);
+  background: none;
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.player-dlc-toggle:hover { color: var(--gold); border-color: var(--line); }
+.player-dlc-toggle.custom { color: var(--gold); border-color: var(--gold); border-style: solid; background: rgba(214,173,93,0.06); }
+
+.player-dlc-picker {
+  padding: 8px 0 4px;
+}
+.player-dlc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.player-dlc-chip {
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--parchment-dim);
+  background: rgba(20,32,46,0.6);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.1s ease;
+}
+.player-dlc-chip:hover { border-color: var(--line); color: var(--parchment); }
+.player-dlc-chip.on {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: rgba(214,173,93,0.10);
+}
+
 /* ── Preset dropdown ───────────────────────────────────── */
 .preset-wrap { position: relative; }
 .preset-menu {

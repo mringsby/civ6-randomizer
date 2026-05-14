@@ -206,6 +206,52 @@ function App() {
     return next;
   });
 
+  // — Per-human DLC overrides —
+  // null = use global DLC, Set = custom DLC for that player
+  const [playerDlcs, setPlayerDlcs] = useState(() => {
+    const saved = storage.get("playerDlcs", null);
+    if (saved) return saved.map(function(d) { return d ? new Set(d) : null; });
+    return [];
+  });
+  const [expandedPlayerDlc, setExpandedPlayerDlc] = useState(null);
+  useEffect(() => {
+    storage.set("playerDlcs", playerDlcs.map(function(d) { return d ? [...d] : null; }));
+  }, [playerDlcs]);
+
+  const togglePlayerDlc = (playerIdx, dlcId) => {
+    setPlayerDlcs(prev => {
+      const next = [...prev];
+      if (!next[playerIdx]) next[playerIdx] = new Set(dlcs);
+      const s = new Set(next[playerIdx]);
+      s.has(dlcId) ? s.delete(dlcId) : s.add(dlcId);
+      next[playerIdx] = s;
+      return next;
+    });
+  };
+
+  const enableCustomDlc = (playerIdx) => {
+    setPlayerDlcs(prev => {
+      const next = [...prev];
+      next[playerIdx] = new Set(dlcs);
+      return next;
+    });
+  };
+
+  const resetPlayerDlc = (playerIdx) => {
+    setPlayerDlcs(prev => {
+      const next = [...prev];
+      next[playerIdx] = null;
+      return next;
+    });
+    setExpandedPlayerDlc(null);
+  };
+
+  // Get the effective leader pool for a given slot index
+  const getSlotPool = (slotIndex) => {
+    const slotDlcs = (slotIndex < humanCount && playerDlcs[slotIndex]) ? playerDlcs[slotIndex] : dlcs;
+    return availableLeaders(slotDlcs, bannedLeaders);
+  };
+
   // — Players —
   const [humanCount, setHumanCount] = useState(() => storage.get("humanCount", 1));
   const [aiCount, setAiCount]       = useState(() => storage.get("aiCount", 7));
@@ -235,6 +281,15 @@ function App() {
       return next;
     });
   }, [humanCount, aiCount]);
+
+  // Reconcile per-human DLC array when human count changes
+  useEffect(() => {
+    setPlayerDlcs(prev => {
+      const next = [...prev];
+      while (next.length < humanCount) next.push(null);
+      return next.slice(0, humanCount);
+    });
+  }, [humanCount]);
 
   // — Link map size toggle (Feature 12) —
   const [linkMapSize, setLinkMapSize] = useState(() => storage.get("linkMapSize", false));
@@ -334,15 +389,16 @@ function App() {
 
   const rerollSlot = (i) => {
     setSlots(prev => {
+      const slotPool = getSlotPool(i);
       const used = new Set(prev.filter((s, idx) => idx !== i && s.leaderId).map(s => s.leaderId));
       const usedCivs = new Set(
         prev.filter((s, idx) => idx !== i && s.leaderId)
-          .map(s => leaderPool.find(l => l.id === s.leaderId)?.civ)
+          .map(function(s) { var found = window.LEADERS.find(function(l) { return l.id === s.leaderId; }); return found ? found.civ : null; })
           .filter(Boolean)
       );
-      let candidates = leaderPool.filter(l => !used.has(l.id) && !usedCivs.has(l.civ));
-      if (!candidates.length) candidates = leaderPool.filter(l => !used.has(l.id));
-      if (!candidates.length) candidates = leaderPool;
+      let candidates = slotPool.filter(l => !used.has(l.id) && !usedCivs.has(l.civ));
+      if (!candidates.length) candidates = slotPool.filter(l => !used.has(l.id));
+      if (!candidates.length) candidates = slotPool;
       if (!candidates.length) return prev;
       return prev.map((s, idx) => idx === i ? { ...s, leaderId: pick(candidates).id } : s);
     });
@@ -404,7 +460,7 @@ function App() {
       setSettings(newSettings);
     }
 
-    // 3. Leaders
+    // 3. Leaders — per-player DLC pools, most constrained first
     if (!collapsed.players) {
       setSlots(prev => {
         const total = humanCount + newAi;
@@ -418,22 +474,43 @@ function App() {
         const lockedLeaders = new Set(sized.filter(s => s.locked && s.leaderId).map(s => s.leaderId));
         const lockedCivs = new Set(
           sized.filter(s => s.locked && s.leaderId)
-            .map(s => leaderPool.find(l => l.id === s.leaderId)?.civ)
+            .map(function(s) { var found = window.LEADERS.find(function(l) { return l.id === s.leaderId; }); return found ? found.civ : null; })
             .filter(Boolean)
         );
 
-        let pool = leaderPool.filter(l => !lockedLeaders.has(l.id) && !lockedCivs.has(l.civ));
-        pool = [...pool].sort(() => Math.random() - 0.5);
+        // Build per-slot pools for unlocked slots
+        var unlocked = [];
+        sized.forEach(function(s, i) {
+          if (s.locked) return;
+          var slotDlcs = (i < humanCount && playerDlcs[i]) ? playerDlcs[i] : dlcs;
+          var pool = availableLeaders(slotDlcs, bannedLeaders).filter(function(l) { return !lockedLeaders.has(l.id); });
+          unlocked.push({ idx: i, pool: pool });
+        });
 
-        const usedCivs = new Set(lockedCivs);
-        return sized.map(s => {
+        // Assign most constrained (smallest pool) first
+        unlocked.sort(function(a, b) { return a.pool.length - b.pool.length; });
+
+        var usedLeaders = new Set(lockedLeaders);
+        var usedCivs = new Set(lockedCivs);
+        var assignments = {};
+
+        unlocked.forEach(function(entry) {
+          var available = entry.pool.filter(function(l) { return !usedLeaders.has(l.id); });
+          var shuffled = available.slice().sort(function() { return Math.random() - 0.5; });
+          var chosen = shuffled.find(function(l) { return !usedCivs.has(l.civ); });
+          if (!chosen && shuffled.length) chosen = shuffled[0]; // allow civ duplicate as fallback
+          if (chosen) {
+            assignments[entry.idx] = chosen.id;
+            usedLeaders.add(chosen.id);
+            usedCivs.add(chosen.civ);
+          } else {
+            assignments[entry.idx] = null;
+          }
+        });
+
+        return sized.map(function(s, i) {
           if (s.locked) return s;
-          let idx = pool.findIndex(l => !usedCivs.has(l.civ));
-          if (idx === -1) idx = 0;
-          const chosen = pool.splice(idx, 1)[0];
-          if (!chosen) return { ...s, leaderId: null };
-          usedCivs.add(chosen.civ);
-          return { ...s, leaderId: chosen.id };
+          return { kind: s.kind, leaderId: assignments[i] !== undefined ? assignments[i] : null, locked: false };
         });
       });
     }
@@ -470,7 +547,7 @@ function App() {
     }
 
     setRollNonce(n => n + 1);
-  }, [leaderPool, humanCount, aiCount, aiCountLocked, dlcs, collapsed, settings, linkMapSize]);
+  }, [leaderPool, humanCount, aiCount, aiCountLocked, dlcs, collapsed, settings, linkMapSize, playerDlcs, bannedLeaders]);
 
   // ── History capture after each roll ──
   useEffect(() => {
@@ -843,19 +920,65 @@ function App() {
 
           <div className="player-list">
             {slots.map(function(s, i) {
+              var isHuman = s.kind === "Human";
+              var slotPool = isHuman ? getSlotPool(i) : leaderPool;
+              var hasCustomDlc = isHuman && playerDlcs[i] != null;
               return (
-                <PlayerRow
-                  key={i}
-                  idx={i + 1}
-                  kind={s.kind}
-                  leaderId={s.leaderId}
-                  locked={s.locked}
-                  leaderPool={leaderPool}
-                  onChange={function(v) { updateSlot(i, { leaderId: v || null }); }}
-                  onLockToggle={function() { updateSlot(i, { locked: !s.locked }); }}
-                  onReroll={function() { rerollSlot(i); }}
-                  rolling={rolling && !s.locked}
-                />
+                <React.Fragment key={i}>
+                  <PlayerRow
+                    idx={i + 1}
+                    kind={s.kind}
+                    leaderId={s.leaderId}
+                    locked={s.locked}
+                    leaderPool={slotPool}
+                    onChange={function(v) { updateSlot(i, { leaderId: v || null }); }}
+                    onLockToggle={function() { updateSlot(i, { locked: !s.locked }); }}
+                    onReroll={function() { rerollSlot(i); }}
+                    rolling={rolling && !s.locked}
+                  />
+                  {isHuman && (
+                    <div className="player-dlc-row">
+                      <button
+                        className={"player-dlc-toggle" + (hasCustomDlc ? " custom" : "")}
+                        onClick={function() { setExpandedPlayerDlc(function(v) { return v === i ? null : i; }); }}
+                      >
+                        {hasCustomDlc
+                          ? "Custom DLC (" + playerDlcs[i].size + "/" + window.DLCS.length + ")"
+                          : "Using global DLC"}
+                      </button>
+                      {expandedPlayerDlc === i && (
+                        <div className="player-dlc-picker">
+                          {!hasCustomDlc && (
+                            <button className="btn btn-ghost" style={{padding: "4px 10px", fontSize: 11}} onClick={function() { enableCustomDlc(i); }}>
+                              Customize for this player
+                            </button>
+                          )}
+                          {hasCustomDlc && (
+                            <React.Fragment>
+                              <div className="player-dlc-chips">
+                                {window.DLCS.map(function(d) {
+                                  return (
+                                    <div
+                                      key={d.id}
+                                      className={"player-dlc-chip " + (playerDlcs[i].has(d.id) ? "on" : "")}
+                                      onClick={function() { togglePlayerDlc(i, d.id); }}
+                                      title={d.name}
+                                    >
+                                      {d.short}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <button className="btn btn-ghost" style={{padding: "4px 10px", fontSize: 10, marginTop: 6}} onClick={function() { resetPlayerDlc(i); }}>
+                                Reset to global
+                              </button>
+                            </React.Fragment>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </React.Fragment>
               );
             })}
           </div>
