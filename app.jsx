@@ -796,7 +796,7 @@ function App() {
         <div className="title-block">
           <div className="eyebrow">— The Tome of Many Worlds —</div>
           <h1>Game Randomizer</h1>
-          <div className="sub">An unofficial setup oracle for 4X civilization-builder games &middot; lock what you love, roll the rest.</div>
+          <div className="sub">An unofficial setup oracle for Civilization VI &middot; lock what you love, roll the rest.</div>
         </div>
         <div className="masthead-actions">
           <div className="preset-wrap">
