@@ -674,9 +674,12 @@ function App() {
       v: Object.entries(victories).filter(function(e) { return e[1].on; }).map(function(e) { return e[0]; }),
     };
     Object.keys(settings).forEach(function(k) { state.s[k] = settings[k].value; });
-    var url = window.location.origin + window.location.pathname + "#" + btoa(JSON.stringify(state));
+    var json = JSON.stringify(state);
+    var url = window.location.origin + window.location.pathname + "#" + btoa(unescape(encodeURIComponent(json)));
     copyText(url).then(function() {
       setToast("Share link copied to clipboard");
+    }).catch(function() {
+      setToast("Failed to copy link");
     });
   };
 
@@ -685,7 +688,7 @@ function App() {
     var hash = window.location.hash.slice(1);
     if (!hash) return;
     try {
-      var state = JSON.parse(atob(hash));
+      var state = JSON.parse(decodeURIComponent(escape(atob(hash))));
       if (state.d) setDlcs(new Set(state.d));
       if (state.h) setHumanCount(state.h);
       if (state.a) setAiCount(state.a);
